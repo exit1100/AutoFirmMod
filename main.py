@@ -26,15 +26,17 @@ def run_binwalk(file_path, log_path):
         subprocess.run(["binwalk", save_path], stdout=log_file, stderr=log_file)
 
 
-def extract_squashfs(file_path, offset, size, output_path):
-    subprocess.run([
+def extract_squashfs(file_path, output_path, offset, size=None):
+    command = [
         "dd",
         f"if={file_path}",
         f"of={output_path}",
         "bs=1",
-        f"skip={offset}",
-        f"count={size}"
-    ], check=True)
+        f"skip={offset}"
+    ]
+    if size is not None:
+        command.append(f"count={size}")
+    subprocess.run(command, check=True)
 
 
 def extract_filesystem(squashfs_path, output_dir):
@@ -58,6 +60,18 @@ def directory_tree(user_dir, save_dir):
 
 # Streamlit Main
 st.title("AutoFirmMod")
+st.markdown("""
+        <style>
+        .button-container {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+        }
+        .stButton button {
+            width: 100px; 
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
 upload_file = st.file_uploader("Please upload your firmware", type=["bin"])
 
@@ -89,10 +103,14 @@ if upload_file is not None:
     else:
         st.success("squashfs Filesystem found.")
         for i in range(len(squashfs_lines)):
-            if squashfs_lines[i][2].lower() == 'squashfs':
+            if squashfs_lines[i] and squashfs_lines[i][2].lower() == 'squashfs':
                 offset = int(squashfs_lines[i][0])
-                size = int(squashfs_lines[i+1][0]) - int(squashfs_lines[i][0])
-                extract_squashfs(save_path, offset, size, user_dir+f'/squashfs{cnt}.bin')  
+                if not squashfs_lines[i+1]:
+                    size = None
+                else:
+                    size = int(squashfs_lines[i+1][0]) - int(squashfs_lines[i][0])
+                output_path = user_dir+f'/squashfs{cnt}.bin'
+                extract_squashfs(save_path, output_path, offset, size)  
                 cnt += 1
 
         os.makedirs(f'{user_dir}/rootfs', exist_ok=True) 
@@ -104,11 +122,50 @@ if upload_file is not None:
 
         directory_tree(f'{user_dir}', f'{user_dir}/tree')
 
-        response_data = json.loads(get_llm_response(f'{user_dir}/tree'))
-        print(response_data)
-        #response_data = { "passwd": "rootfs/squashfs-root-0/etc/passwd", "shadow": "rootfs/squashfs-root-0/etc/shadow", "boot_script": "rootfs/squashfs-root-0/etc/init.d/rcS" }
-        st.write("### boot script & passwd")
-        st.write(response_data)
-        for i in response_data:
-            st.success(f'{i} : {response_data[i]}')
+        file_paths = get_llm_response(f'{user_dir}/tree', 1)
+        file_paths_json = json.loads(file_paths)
+        #file_paths_json = {"passwd":"rootfs/squashfs-root-0/etc/config/passwd","shadow":"rootfs/squashfs-root-0/etc/config/shadow","boot_scripts":["rootfs/squashfs-root-0/etc/init.d/rc.local","rootfs/squashfs-root-0/etc/init.d/rcS"]}
+        
 
+        st.write("### boot script & passwd")
+        st.write(file_paths_json)
+        for key, path in file_paths_json.items():
+            try:
+                if isinstance(path, list):
+                    for single_path in path:
+                        with open(f'{user_dir}/{single_path}', 'r') as file:
+                            content = file.read()
+                            st.write(f"### {single_path}")
+                            st.code(content)
+                            st.markdown("---")
+                else:
+                    with open(f'{user_dir}/{path}', 'r') as file:
+                        content = file.read()
+                        st.write(f"### {path}:")
+                        st.code(content)
+                    st.markdown("---")
+            except FileNotFoundError:
+                st.info(f"File {path} not found.")
+            except Exception as e:
+                print(f"An error occurred while reading {path}: {e}")
+
+        file_paths = get_llm_response(f'{user_dir}/tree', 2)
+        file_paths_json = json.loads(file_paths)
+        #file_paths_json = {"telnetd":"rootfs/squashfs-root-1/sbin/telnetd","nc":"rootfs/squashfs-root-1/bin/nc","socat":None,"busybox":None}
+        
+        st.write("### Backdoor Point List")
+        st.write(file_paths_json)
+        st.markdown("---")
+
+        st.write("### Choice Backdoor")
+        columns = st.columns(4) 
+        for idx, (key, path) in enumerate(file_paths_json.items()):
+            with columns[idx]:
+                st.markdown('<div class="button-container">', unsafe_allow_html=True)
+                if path is None:
+                    st.button(f"{key}", key=f"{key}_disabled", disabled=True, help="Not Available")
+                else:
+                    st.button(f"{key}", key=f"{key}_enabled", disabled=False, help="Available")
+                st.markdown('</div>', unsafe_allow_html=True)
+
+        
