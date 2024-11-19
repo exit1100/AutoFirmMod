@@ -21,7 +21,7 @@ def save_uploaded_file(upload_file, user_id):
     return save_path, user_dir
 
 
-def run_binwalk(file_path, log_path):
+def run_binwalk(save_path, log_path):
     with open(log_path, "w") as log_file:
         subprocess.run(["binwalk", save_path], stdout=log_file, stderr=log_file)
 
@@ -57,9 +57,43 @@ def directory_tree(user_dir, save_dir):
             shell=True, stdout=save_dir, stderr=save_dir
         )
 
+
 def button_click_callback(key):
     st.session_state.button_clicked = key
 
+
+def read_file(file_path):
+    try:
+        with open(file_path, "rb") as file:
+            file_data = file.read()        
+    except FileNotFoundError:
+        st.error("The specified file was not found.")
+    except Exception as e:
+        st.error(f"An error occurred: {e}") 
+    return file_data
+
+
+def overwrite_file(src_path, start_byte, end_byte, dst_path):
+    try:
+        if end_byte == None:
+            end_byte = len(dst_path)
+        overwrite_length_check = end_byte - start_byte
+        with open(src_path, 'rb') as source_file:
+            src_data = source_file.read()
+        overwrite_length = len(src_data)
+        if overwrite_length < overwrite_length_check:
+            print('The size of the filesystem to be overwritten is larger than the existing filesystem.')
+        length = min(overwrite_length, overwrite_length_check)
+        with open(dst_path, 'rb+') as target_file:
+            target_file.seek(start_byte)
+            target_file.write(src_data[:length])
+
+        print(f"Successfully overwritten {length} bytes from {src_path} "
+              f"to {dst_path} from byte {start_byte} to {start_byte + length}.")
+    except FileNotFoundError as e:
+        print(f"File not found: {e.filename}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 # Streamlit Main
 st.title("AutoFirmMod")
@@ -88,9 +122,16 @@ if "file_paths_json2" not in st.session_state:
 if "user_dir" not in st.session_state:
     st.session_state.user_dir = None
 
+if "upload_file_name" not in st.session_state:
+    st.session_state.upload_file_name = None
+
+if "squashfs_lines" not in st.session_state:
+    st.session_state.squashfs_lines = None
+
 if st.session_state.button_clicked is None:
     upload_file = st.file_uploader("Please upload your firmware", type=["bin"])
     if upload_file is not None:
+        st.session_state.upload_file_name = upload_file.name
         user_id = str(uuid.uuid4())
         directory_clean(f'{UPLOAD_DIR}/{user_id}')
         save_path, user_dir = save_uploaded_file(upload_file, user_id)
@@ -112,7 +153,7 @@ if st.session_state.button_clicked is None:
                     if i + 1 < len(lines) and "squashfs" not in lines[i + 1].lower():
                         next_line = lines[i + 1].strip().split()
                         squashfs_lines.append(next_line)
-
+        st.session_state.squashfs_lines = squashfs_lines
         cnt = 0
         if not squashfs_lines:
             st.info("squashfs Filesystem not found.")
@@ -143,28 +184,29 @@ if st.session_state.button_clicked is None:
             #file_paths_json1 = {"passwd":"rootfs/squashfs-root-0/etc/config/passwd","shadow":"rootfs/squashfs-root-0/etc/config/shadow","boot_scripts":["rootfs/squashfs-root-0/etc/init.d/rc.local","rootfs/squashfs-root-0/etc/init.d/rcS"]}
             file_paths_json1 = {"passwd":"rootfs/squashfs-root-0/etc/passwd", "shadow":"rootfs/squashfs-root-0/etc/shadow", "boot_script":"rootfs/squashfs-root-0/etc/init.d/rcS"}
             st.session_state.file_paths_json1 = file_paths_json1
-
+            st.markdown("---")
             st.write("### boot script & passwd")
             st.write(file_paths_json1)
-            for key, path in file_paths_json1.items():
-                try:
-                    if isinstance(path, list):
-                        for single_path in path:
-                            with open(f'{user_dir}/{single_path}', 'r') as file:
-                                content = file.read()
-                                st.write(f"### {single_path}")
-                                st.code(content)
-                                st.markdown("---")
-                    else:
-                        with open(f'{user_dir}/{path}', 'r') as file:
-                            content = file.read()
-                            st.write(f"### {path}:")
-                            st.code(content)
-                        st.markdown("---")
-                except FileNotFoundError:
-                    st.info(f"File {path} not found.")
-                except Exception as e:
-                    print(f"An error occurred while reading {path}: {e}")
+            st.markdown("---")
+            # for key, path in file_paths_json1.items():
+            #     try:
+            #         if isinstance(path, list):
+            #             for single_path in path:
+            #                 with open(f'{user_dir}/{single_path}', 'r') as file:
+            #                     content = file.read()
+            #                     st.write(f"### {single_path}")
+            #                     st.code(content)
+            #                     st.markdown("---")
+            #         else:
+            #             with open(f'{user_dir}/{path}', 'r') as file:
+            #                 content = file.read()
+            #                 st.write(f"### {path}:")
+            #                 st.code(content)
+            #             st.markdown("---")
+            #     except FileNotFoundError:
+            #         st.info(f"File {path} not found.")
+            #     except Exception as e:
+            #         print(f"An error occurred while reading {path}: {e}")
 
             #file_paths = get_llm_response(2, f'{user_dir}/tree')
             #file_paths_json2 = json.loads(file_paths)
@@ -235,7 +277,34 @@ if st.session_state.get("button_clicked"):
             except subprocess.CalledProcessError as e:
                 print("Command failed with error:")
                 print(e.stderr)
+        file_path_src = f"{user_dir}/{st.session_state.upload_file_name}"
+        file_path_dst = f"{user_dir}/{st.session_state.upload_file_name.split('.')[0]}-modified.bin"
+        subprocess.run(["cp", file_path_src, file_path_dst], check=True)
+        squashfs_lines = st.session_state.squashfs_lines
+        st.code(squashfs_lines)
+        fs_size = {}
+        for i in range(len(squashfs_lines)):
+            if squashfs_lines[i] and squashfs_lines[i][2].lower() == 'squashfs':
+                start_byte = int(squashfs_lines[i][0])
+                if not squashfs_lines[i+1]:
+                    end_byte = None
+                else:
+                    end_byte = int(squashfs_lines[i+1][0])
+                fs_size[f"squashfs-root-{i}"] = [start_byte, end_byte]
 
+        for fs_path in modified_fs:
+            src_path = f"{user_dir}/{fs_path}-patched"
+            start_byte, end_byte = fs_size[f'squashfs-root-{fs_path[-1]}']
+            overwrite_file(src_path, start_byte, end_byte, file_path_dst)
+        file_name = file_path_dst.split("/")[-1] 
+        file_data = read_file(file_path_dst)
+        st.download_button(
+                label=f"{file_name}",
+                data=file_data,
+                file_name=file_name,
+                mime="application/octet-stream",
+        )
+        
     elif st.session_state.button_clicked == "nc":
         st.code(f"file_paths_json1: {st.session_state.file_paths_json1}")
         st.code(f"file_paths_json2: {st.session_state.file_paths_json2}")
