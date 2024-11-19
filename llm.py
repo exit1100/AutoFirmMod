@@ -6,8 +6,7 @@ def get_llm(model='gpt-4o'):
     return llm
 
 
-def get_llm_response(tree_path, flag):
-    llm = get_llm()
+def handle_prompt(flag, tree_path=None) :
     with open(tree_path, "r") as file:
         directory_structure = file.read()
     check_file_list = ''
@@ -25,5 +24,11 @@ def get_llm_response(tree_path, flag):
         "JSON 형식으로만 답변하고, 그 외의 문구나 코드 블록(```)을 포함하지 마세요."
         "경로를 나타낼땐 최상단 디렉토리부터 표시해주시고, 심볼릭 링크는 포함하지 마세요."
     )
+    return system_prompt
+
+
+def get_llm_response(flag, tree_path=None):
+    llm = get_llm()
+    system_prompt = handle_prompt(flag, tree_path)
     response = llm(system_prompt)
     return response.content
