@@ -23,6 +23,7 @@ def search_file_prompt(flag, tree_path=None) :
         f"{check_file_list}"
         "JSON 형식으로만 답변하고, 그 외의 문구나 코드 블록(```)을 포함하지 마세요."
         "경로를 나타낼땐 최상단 디렉토리부터 표시해주시고, 심볼릭 링크는 포함하지 마세요."
+        "만약 경로에 파일이 없는 경우 null로 표현해주세요."
     )
     return system_prompt
 
