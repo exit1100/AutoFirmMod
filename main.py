@@ -234,12 +234,18 @@ if st.session_state.get("button_clicked"):
     elif st.session_state.button_clicked == "nc":
         st.code(f"setting_path: {setting_path}")
         st.code(f"binary_path: {binary_path}")
+        st.warning(f"The selected backdoor type '{st.session_state.button_clicked}' is not yet implemented.")
+        st.stop()
     elif st.session_state.button_clicked == "socat":
         st.code(f"setting_path: {setting_path}")
         st.code(f"binary_path: {binary_path}")
+        st.warning(f"The selected backdoor type '{st.session_state.button_clicked}' is not yet implemented.")
+        st.stop()
     elif st.session_state.button_clicked == "busybox":
         st.code(f"setting_path: {setting_path}")
         st.code(f"binary_path: {binary_path}")
+        st.warning(f"The selected backdoor type '{st.session_state.button_clicked}' is not yet implemented.")
+        st.stop()
     
     cmd = f"find {user_dir}/rootfs/* -type d -mtime -1"
     result = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
