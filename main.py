@@ -14,7 +14,6 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 def save_uploaded_file(upload_file, user_id):
     user_dir = os.path.join(UPLOAD_DIR, user_id)
     os.makedirs(user_dir, exist_ok=True)
-
     save_path = os.path.join(user_dir, upload_file.name)
     with open(save_path, "wb") as f:
         f.write(upload_file.getbuffer())
@@ -95,6 +94,7 @@ def overwrite_file(src_path, start_byte, end_byte, dst_path):
     except Exception as e:
         print(f"An error occurred: {e}")
 
+
 # Streamlit Main
 st.title("AutoFirmMod")
 st.markdown("""
@@ -110,23 +110,18 @@ st.markdown("""
         </style>
     """, unsafe_allow_html=True)
 
-if "button_clicked" not in st.session_state:
-    st.session_state.button_clicked = None
+default_states = {
+    "button_clicked": None,
+    "file_paths_json1": None,
+    "file_paths_json2": None,
+    "user_dir": None,
+    "upload_file_name": None,
+    "squashfs_lines": None,
+}
 
-if "file_paths_json1" not in st.session_state:
-    st.session_state.file_paths_json1 = None
-
-if "file_paths_json2" not in st.session_state:
-    st.session_state.file_paths_json2 = None
-
-if "user_dir" not in st.session_state:
-    st.session_state.user_dir = None
-
-if "upload_file_name" not in st.session_state:
-    st.session_state.upload_file_name = None
-
-if "squashfs_lines" not in st.session_state:
-    st.session_state.squashfs_lines = None
+for key, default_value in default_states.items():
+    if key not in st.session_state:
+        st.session_state[key] = default_value
 
 if st.session_state.button_clicked is None:
     upload_file = st.file_uploader("Please upload your firmware", type=["bin"])
@@ -221,10 +216,10 @@ if st.session_state.button_clicked is None:
 
 if st.session_state.get("button_clicked"):
     st.markdown(f"### Backdoor Type : {st.session_state.button_clicked}")
+    setting_path = st.session_state.file_paths_json1
+    binary_path = st.session_state.file_paths_json2
+    user_dir = st.session_state.user_dir
     if st.session_state.button_clicked == "telnetd":
-        setting_path = st.session_state.file_paths_json1
-        binary_path = st.session_state.file_paths_json2
-        user_dir = st.session_state.user_dir
         commands = get_llm_response(3, None, setting_path, binary_path, st.session_state.user_dir)
         print(commands)
         commands = eval(commands)
@@ -235,59 +230,61 @@ if st.session_state.get("button_clicked"):
             except subprocess.CalledProcessError as e:
                 st.info(f"Error occurred while executing the command: {cmd}")
         st.success(f'Filesystem modification complete!')
-        cmd = f"find {user_dir}/rootfs/* -type d -mtime -1"
-        result = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
-        lines = result.stdout.splitlines()
-        modified_fs = []
-        for line in lines:
-            word = line.split('/')
-            modified_fs.append(word[3])
-        st.success(f'Repackaging modified filesystem : {', '.join(modified_fs)}')
-        for fs_path in modified_fs:
-            cmd = ["mksquashfs", f"{user_dir}/rootfs/{fs_path}", f"{user_dir}/{fs_path}-patched", "-comp", "xz"]
-            try:
-                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-                print("Command executed successfully:")
-                print(result.stdout) 
-            except subprocess.CalledProcessError as e:
-                print("Command failed with error:")
-                print(e.stderr)
-        file_path_src = f"{user_dir}/{st.session_state.upload_file_name}"
-        file_path_dst = f"{user_dir}/{st.session_state.upload_file_name.split('.')[0]}-modified.bin"
-        subprocess.run(["cp", file_path_src, file_path_dst], check=True)
-        squashfs_lines = st.session_state.squashfs_lines
-        fs_size = {}
-        for i in range(len(squashfs_lines)):
-            if squashfs_lines[i] and squashfs_lines[i][2].lower() == 'squashfs':
-                start_byte = int(squashfs_lines[i][0])
-                if not squashfs_lines[i+1]:
-                    end_byte = None
-                else:
-                    end_byte = int(squashfs_lines[i+1][0])
-                fs_size[f"squashfs-root-{i}"] = [start_byte, end_byte]
-
-        for fs_path in modified_fs:
-            src_path = f"{user_dir}/{fs_path}-patched"
-            start_byte, end_byte = fs_size[f'squashfs-root-{fs_path[-1]}']
-            overwrite_file(src_path, start_byte, end_byte, file_path_dst)
-        file_name = file_path_dst.split("/")[-1] 
-        file_data = read_file(file_path_dst)
-        st.write("### Download Modified Firmware")
-        st.write('Please click the download link below to download the modified firmware.')
-        st.download_button(
-                label=f"Download",
-                data=file_data,
-                file_name=file_name,
-                mime="application/octet-stream",
-        )
         
     elif st.session_state.button_clicked == "nc":
-        st.code(f"file_paths_json1: {st.session_state.file_paths_json1}")
-        st.code(f"file_paths_json2: {st.session_state.file_paths_json2}")
+        st.code(f"setting_path: {setting_path}")
+        st.code(f"binary_path: {binary_path}")
     elif st.session_state.button_clicked == "socat":
-        st.code(f"file_paths_json1: {st.session_state.file_paths_json1}")
-        st.code(f"file_paths_json2: {st.session_state.file_paths_json2}")
+        st.code(f"setting_path: {setting_path}")
+        st.code(f"binary_path: {binary_path}")
     elif st.session_state.button_clicked == "busybox":
-        st.code(f"file_paths_json1: {st.session_state.file_paths_json1}")
-        st.code(f"file_paths_json2: {st.session_state.file_paths_json2}")
+        st.code(f"setting_path: {setting_path}")
+        st.code(f"binary_path: {binary_path}")
+    
+    cmd = f"find {user_dir}/rootfs/* -type d -mtime -1"
+    result = subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True)
+    lines = result.stdout.splitlines()
+    modified_fs = []
+    for line in lines:
+        word = line.split('/')
+        modified_fs.append(word[3])
+    st.success(f'Repackaging modified filesystem : {', '.join(modified_fs)}')
+    for fs_path in modified_fs:
+        cmd = ["mksquashfs", f"{user_dir}/rootfs/{fs_path}", f"{user_dir}/{fs_path}-patched", "-comp", "xz"]
+        try:
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            print("Command executed successfully:")
+            print(result.stdout) 
+        except subprocess.CalledProcessError as e:
+            print("Command failed with error:")
+            print(e.stderr)
+    file_path_src = f"{user_dir}/{st.session_state.upload_file_name}"
+    file_path_dst = f"{user_dir}/{st.session_state.upload_file_name.split('.')[0]}-modified.bin"
+    subprocess.run(["cp", file_path_src, file_path_dst], check=True)
+    squashfs_lines = st.session_state.squashfs_lines
+    fs_size = {}
+    for i in range(len(squashfs_lines)):
+        if squashfs_lines[i] and squashfs_lines[i][2].lower() == 'squashfs':
+            start_byte = int(squashfs_lines[i][0])
+            if not squashfs_lines[i+1]:
+                end_byte = None
+            else:
+                end_byte = int(squashfs_lines[i+1][0])
+            fs_size[f"squashfs-root-{i}"] = [start_byte, end_byte]
+
+    for fs_path in modified_fs:
+        src_path = f"{user_dir}/{fs_path}-patched"
+        start_byte, end_byte = fs_size[f'squashfs-root-{fs_path[-1]}']
+        overwrite_file(src_path, start_byte, end_byte, file_path_dst)
+    file_name = file_path_dst.split("/")[-1] 
+    file_data = read_file(file_path_dst)
+    st.write("### Download Modified Firmware")
+    st.write('Please click the download link below to download the modified firmware.')
+    st.write('To modify a new firmware file, please refresh the page.')
+    st.download_button(
+            label=f"Download",
+            data=file_data,
+            file_name=file_name,
+            mime="application/octet-stream",
+    )
 
