@@ -11,7 +11,7 @@ def search_file_prompt(flag, tree_path=None) :
         directory_structure = file.read()
     check_file_list = ''
     if flag == 1:
-        check_file_list = "`passwd` 파일, `shadow` 파일, 그리고 부팅 스크립트의 경로를 각각 찾아 JSON 형태로 답변해 주세요."
+        check_file_list = "`passwd` 파일, `shadow` 파일, 그리고 부팅 스크립트의 경로를 각각 찾아 JSON 형태로 답변해 주세요.\n 부팅 스크립트의 키는 boot_scripts로 해주시고 리스트 형태로 반환해주세요."
     elif flag == 2:
         check_file_list = "`telnetd` 파일, `nc` 파일, `socat` 파일, 그리고 `busybox`의 경로를 각각 찾아 JSON 형태로 답변해 주세요."
 
@@ -34,22 +34,39 @@ def target_file_path_prompt(setting_path, binary_path, user_dir) :
         "정보:\n"
         f"settings_path = {setting_path}\n"
         f"binary_path = {binary_path}\n\n"
-        "질문: 정보를 참고하여 부팅 스크립트에 telnetd를 백그라운드로 실행하는 명령어를 echo로 추가해주시고, telnetd는 /usr 경로에 마운트 될 수 있으므로 둘 다 추가해주세요.\n"
-        "shadow 파일의 root 계정 비밀번호를 sed -i 's/^root:[^:]*:/root::/' 명령어로 제거해주세요."
+        "질문: 정보를 참고하여 부팅 스크립트에 telnetd만 백그라운드로 실행하는 명령어를 echo로 추가해주세요."
+        "telnetd는 `/usr/sbin`과 `/sbin` 두 경로 모두에서 실행 가능해야 하므로 각각의 명령을 추가해 주세요.\n"
+        "shadow 파일의 root 계정 비밀번호를 sed 명령어로 제거해 주세요. "
+        "명령어: sed -i 's/^root:[^:]*:/root::/'\n"
         "파이썬 리스트 형태로 답변해주시고, 대부분의 경로를 생략하지마세요."
         "telnetd 는 마운트 된 이후 경로를 써야하므로 앞에 파일 시스템 경로는 생략해주세요."
         f"값을 쓰는 파일의 경로는 앞에 {user_dir}/ 경로를 추가해야 합니다."
         "그 외의 문구나 코드 블록(```)을 반드시 포함하지 마세요."
-        ""
     )
     return system_prompt
 
 
-def get_llm_response(flag, tree_path=None, setting_path=None, binary_path=None, user_dir=None):
+def find_shadow_path_prompt(setting_path, missing_files):
+    system_prompt = (
+        f"다음 오류가 발생했습니다:\n\n"
+        f"오류 메시지: {missing_files}\n\n"
+        f"마운트 정보:\n"
+        f"{setting_path}\n\n"
+        f"`shadow` 파일 경로가 잘못 되었습니다."
+        f"마운트 정보를 참고하여 `shadow` 파일의 실제 경로를 찾아야 합니다."
+        f"마운트 정보를 확인한 후, 마운트 되었을 때의 경로를 답변해주세요."
+        f"경로 이외의 문구나 코드 블록(```)을 반드시 제외하고 답변해주세요."
+    )
+    return system_prompt
+
+
+def get_llm_response(flag, tree_path=None, setting_path=None, binary_path=None, user_dir=None, missing_files=None):
     llm = get_llm()
     if flag == 1 or flag == 2:
         system_prompt = search_file_prompt(flag, tree_path)
     elif flag == 3:
         system_prompt = target_file_path_prompt(setting_path, binary_path, user_dir)
+    elif flag == 4:
+        system_prompt = find_shadow_path_prompt(setting_path, missing_files)
     response = llm(system_prompt)
     return response.content
