@@ -113,6 +113,15 @@ def read_file(file_path):
     return file_data
 
 
+def ai_response_replace(data):
+    match = re.search(r"```python(.*?)```", data, re.DOTALL)
+    if not match:
+        return None
+    
+    result = match.group(1).strip()
+    return result
+
+
 def find_squashfs(binwalk_log):
     squashfs_lines = []
 
@@ -294,6 +303,8 @@ def backdoor_telnetd():
     user_dir = st.session_state.user_dir
 
     commands = get_llm_response(3, None, setting_paths, binary_paths, user_dir)
+    if commands in "```":
+        commands = ai_response_replace(commands)
     commands = eval(commands)
     print(f'llm response - commands : {commands}')
     
@@ -353,6 +364,8 @@ def backdoor_nc(ip, port):
     chmod_all(dst_path)
 
     commands = get_llm_response(5, None, setting_paths, binary_paths, user_dir, None)
+    if commands in "```":
+        commands = ai_response_replace(commands)
     commands = eval(commands)
     print(f'llm response - commands : {commands}')
     
